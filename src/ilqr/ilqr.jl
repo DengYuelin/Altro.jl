@@ -1,5 +1,5 @@
 
-struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,L1} <: UnconstrainedSolver{T}
+struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,p,L1} <: UnconstrainedSolver{T}
     # Model + Objective
     model::L
     obj::O
@@ -22,7 +22,7 @@ struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,L1} <: UnconstrainedSolver{T}
     K::Vector{SizedMatrix{m,n̄,T,2,Matrix{T}}}  # State feedback gains (m,n,N-1)
     d::Vector{SizedVector{m,T,Vector{T}}}  # Feedforward gains (m,N-1)
 
-    D::Vector{DynamicsExpansion{T,n,n̄,m}}  # discrete dynamics jacobian (block) (n,n+m+1,N)
+    D::Union{Vector{DynamicsExpansion{T,n,n̄,m}}, Vector{DynamicsExpansionMC{T,n,n̄,m,p}}}  # discrete dynamics jacobian (block) (n,n+m+1,N)
     G::Vector{SizedMatrix{n,n̄,T,2,Matrix{T}}}        # state difference jacobian (n̄, n)
 
 	quad_obj::QuadraticObjective{n,m,T}  # quadratic expansion of obj
@@ -67,8 +67,13 @@ function iLQRSolver(
 
 	D = [DynamicsExpansion{T}(n,n̄,m) for k = 1:N-1]
 	G = [SizedMatrix{n,n̄}(zeros(n,n̄)) for k = 1:N+1]  # add one to the end to use as an intermediate result
-
-	E = QuadraticObjective(n̄,m,N)
+    
+    if prob.model isa AbstractModelMC
+        p = prob.model.p # add function for constraint size?
+        D = [TO.DynamicsExpansionMC{Float64}(n,m,p) for k = 1:N]
+    end
+    
+    E = QuadraticObjective(n̄,m,N)
 	quad_exp = QuadraticObjective(E, prob.model)
 	Q = QuadraticObjective(n̄,m,N)
 	Qprev = QuadraticObjective(n̄,m,N)
@@ -85,7 +90,7 @@ function iLQRSolver(
     logger = SolverLogging.default_logger(opts.verbose >= 2)
 	L = typeof(prob.model)
 	O = typeof(prob.obj)
-    solver = iLQRSolver{T,QUAD,L,O,n,n̄,m,n+m}(prob.model, prob.obj, x0, xf,
+    solver = iLQRSolver{T,QUAD,L,O,n,n̄,m,p,n+m}(prob.model, prob.obj, x0, xf,
 		prob.tf, N, opts, stats,
         Z, Z̄, K, d, D, G, quad_exp, S, E, Q, Qprev, Q_tmp, Quu_reg, Qux_reg, ρ, dρ, grad, logger)
 

@@ -32,6 +32,7 @@ using TrajectoryOptimization:
     AbstractObjective, Objective, QuadraticObjective,
     AbstractTrajectory,
     DynamicsExpansion, # TODO: Move to ALTRO
+    DynamicsExpansionMC,
     # ALConstraintSet,
     DynamicsConstraint,
     Traj,
@@ -39,7 +40,7 @@ using TrajectoryOptimization:
     Equality, Inequality, SecondOrderCone
 
 using RobotDynamics:
-    AbstractModel,
+    AbstractModel, AbstractModelMC,
     QuadratureRule, Implicit, Explicit,
     AbstractKnotPoint, KnotPoint, StaticKnotPoint,
     state, control
