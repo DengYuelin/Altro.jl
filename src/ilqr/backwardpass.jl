@@ -26,40 +26,51 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
     ΔV = @SVector zeros(2)
 
 	k = N-1
-    while k > 0
-        ix = Z[k]._x
-        iu = Z[k]._u
+	while k > 0
+		if model isa AbstractModelMC
+			cost_exp = solver.E[k]
+			dyn_exp = solver.D[k]
 
-		# Get error state expanions
-		fdx,fdu = TO.error_expansion(solver.D[k], model)
-		cost_exp = solver.E[k]
-		Q = solver.Q_tmp 
+			# Compute gains
+			Kλ, lλ = _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
 
-		# Calculate action-value expansion
-		_calc_Q!(Q, cost_exp, S[k+1], fdx, fdu, S[k])
+			# Calculate cost-to-go (using unregularized Quu and Qux)
+			ΔV += _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
+		else
+			ix = Z[k]._x
+			iu = Z[k]._u
 
-		# Regularization
-		Quu_reg .= Q.R #+ solver.ρ[1]*I
-		Quu_reg .+= solver.ρ[1]*Diagonal(@SVector ones(m))
-		Qux_reg .= Q.H
+			# Get error state expanions
+			fdx,fdu = TO.error_expansion(solver.D[k], model)
+			cost_exp = solver.E[k]
+			Q = solver.Q_tmp 
 
-	    if solver.opts.bp_reg
-	        vals = eigvals(Hermitian(Quu_reg))
-	        if minimum(vals) <= 0
-	            @warn "Backward pass regularized"
-	            regularization_update!(solver, :increase)
-	            k = N-1
-	            ΔV = @SVector zeros(2)
-	            continue
-	        end
-	    end
+			# Calculate action-value expansion
+			_calc_Q!(Q, cost_exp, S[k+1], fdx, fdu, S[k])
 
-        # Compute gains
-		_calc_gains!(K[k], d[k], Quu_reg, Qux_reg, Q.r)
+			# Regularization
+			Quu_reg .= Q.R #+ solver.ρ[1]*I
+			Quu_reg .+= solver.ρ[1]*Diagonal(@SVector ones(m))
+			Qux_reg .= Q.H
 
-		# Calculate cost-to-go (using unregularized Quu and Qux)
-		ΔV += _calc_ctg!(S[k], Q, K[k], d[k])
+			if solver.opts.bp_reg
+				vals = eigvals(Hermitian(Quu_reg))
+				if minimum(vals) <= 0
+					@warn "Backward pass regularized"
+					regularization_update!(solver, :increase)
+					k = N-1
+					ΔV = @SVector zeros(2)
+					continue
+				end
+			end
 
+			# Compute gains
+			_calc_gains!(K[k], d[k], Quu_reg, Qux_reg, Q.r)
+
+			# Calculate cost-to-go (using unregularized Quu and Qux)
+			ΔV += _calc_ctg!(S[k], Q, K[k], d[k])
+		end
+	
         k -= 1
     end
 
@@ -281,4 +292,52 @@ function _calc_ctg!(Q::TO.StaticExpansion, K::SMatrix, d::SVector, grad_only::Bo
 	t1 = d'Q.u
 	t2 = 0.5*d'Q.uu*d
 	return Sxx, Sx, @SVector [t1, t2]
+end
+
+## MC versions
+
+function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ)
+    A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
+    Q,q,R,r,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.c
+    
+    Abar = A -B*Ku -C*Kλ
+    bbar = -B*lu -C*lλ
+    S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
+    S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
+
+    # return ΔV
+    t1 = 0 #d'Q.u
+	t2 = 0 #0.5*d'Q.uu*d
+    return  @SVector [t1, t2]
+end
+
+function _calc_gains!(K, d, S, cost_exp, dyn_exp)
+    S⁺, s⁺ = S.Q, S.q
+    Q,q,R,r,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.c 
+    A,B,C,G = dyn_exp.A, dyn_exp.B, dyn_exp.C, dyn_exp.G
+
+    n,m = size(B)
+    _,p = size(C)
+
+    D = B - C/(G*C)*G*B
+    M11 = R + D'*S⁺*B
+    M12 = D'*S⁺*C
+    M21 = G*B
+    M22 = G*C
+
+    M = [M11 M12;M21 M22]
+    b = [D'*S⁺;G]*A
+
+    K_all = M\b
+    Ku = K_all[1:m,:]
+    Kλ = K_all[m .+ (1:p),:]
+
+    l_all = M\[r + D'*s⁺; zeros(p)]
+    lu = l_all[1:m]
+    lλ = l_all[m .+ (1:p)]
+
+    K .= Ku
+    d .= lu
+
+    return Kλ, lλ
 end
