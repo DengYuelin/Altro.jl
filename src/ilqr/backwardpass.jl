@@ -36,6 +36,15 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 
 			# Calculate cost-to-go (using unregularized Quu and Qux)
 			ΔV += _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
+			
+			# # Compute Q expansion
+			# Q_exp = _calc_Q!(S[k+1], cost_exp, dyn_exp)
+
+			# # Compute gains
+			# Kλ = _calc_gains!(K[k], d[k], Q_exp, dyn_exp)
+
+			# # Calculate cost-to-go (using unregularized Quu and Qux)
+			# ΔV += _calc_ctg!(S[k], Q_exp, K[k], d[k], Kλ)
 		else
 			ix = Z[k]._x
 			iu = Z[k]._u
@@ -296,21 +305,55 @@ end
 
 ## MC versions
 
-function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ)
-    A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
-    Q,q,R,r,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.c
-    
-    Abar = A -B*Ku -C*Kλ
-    bbar = -B*lu -C*lλ
-    S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
-    S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
+function _calc_Q!(S, cost_exp, dyn_exp)
+	A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
+    Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
+	S⁺, s⁺ = S.Q, S.q
 
-    # return ΔV
-    t1 = 0 #d'Q.u
-	t2 = 0 #0.5*d'Q.uu*d
+	Qx = q + A'*s⁺
+	Qu = r + B'*s⁺
+	Qλ = C'*s⁺
+	Qux = H + B'*S⁺*A
+	Quu = R + B'*S⁺*B
+	Quλ = B'*S⁺*C
+	Qxx = Q + A'*S⁺*A
+	Qxu = A'*S⁺*B
+	Qxλ = A'*S⁺*C
+	Qλx = C'*S⁺*A
+	Qλu = C'*S⁺*B
+	Qλλ = C'*S⁺*C
+
+	return TO.QExpansionMC(Qx, Qu, Qλ, Qux, Quu, Quλ, Qxx, Qxu, Qxλ, Qλx, Qλu, Qλλ)
+end
+
+function _calc_gains!(K, d, Q::TO.QExpansionMC, dyn_exp)
+	A,B,C,G = dyn_exp.A, dyn_exp.B, dyn_exp.C, dyn_exp.G
+	m,p = size(Q.uλ)
+	
+	M = [Q.uu Q.uλ; G*B G*C]
+	b = [-Q.ux; -G*A]
+	l = [-Q.u; zeros(p)]
+
+	K_all = M\b
+	K .= K_all[1:m,:]
+	Kλ = K_all[m .+ (1:p),:]
+	
+	d_all = M\l
+	d .= d_all[1:m]
+	
+	return Kλ
+end
+
+function _calc_ctg!(S, Q, K, d, Kλ)
+	S.Q = Q.xx + 2*Q.xλ*Kλ + Kλ'*Q.λλ*Kλ + K'*Q.uu*K + 2*Q.xu*K + 2*Kλ'*Q.λu*K
+	S.q = Q.x + K'*Q.u + Kλ'*Q.λ + K'*Q.uu*d + Q.xu*d + Kλ'*Q.λu*d
+
+    t1 = d'Q.u
+	t2 = 0.5*d'Q.uu*d
     return  @SVector [t1, t2]
 end
 
+# OLD
 function _calc_gains!(K, d, S, cost_exp, dyn_exp)
     S⁺, s⁺ = S.Q, S.q
     Q,q,R,r,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.c 
@@ -340,4 +383,19 @@ function _calc_gains!(K, d, S, cost_exp, dyn_exp)
     d .= lu
 
     return Kλ, lλ
+end
+
+function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ)
+    A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
+    Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
+    
+    Abar = A -B*Ku -C*Kλ
+    bbar = -B*lu -C*lλ
+    S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
+    S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
+
+    # return ΔV
+    t1 = 0 #d'Q.u
+	t2 = 0 #0.5*d'Q.uu*d
+    return  @SVector [t1, t2]
 end
