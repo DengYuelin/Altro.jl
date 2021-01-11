@@ -37,6 +37,10 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 			# Calculate cost-to-go (using unregularized Quu and Qux)
 			ΔV += _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
 			
+			# flip signs
+			K[k] .*= -1
+			d[k] .*= -1
+
 			# # Compute Q expansion
 			# Q_exp = _calc_Q!(S[k+1], cost_exp, dyn_exp)
 
