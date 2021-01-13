@@ -1,4 +1,14 @@
 
+"""
+    iLQRSolver
+
+A fast solver for unconstrained trajectory optimization that uses a Riccati recursion
+to solve for a local feedback controller around the current trajectory, and then 
+simulates the system forward using the derived feedback control law.
+
+# Constructor
+    Altro.iLQRSolver(prob, opts; kwarg_opts...)
+"""
 struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,p,L1} <: UnconstrainedSolver{T}
     # Model + Objective
     model::L
@@ -37,6 +47,7 @@ struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,p,L1} <: UnconstrainedSolver{T
     ρ::Vector{T}   # Regularization
     dρ::Vector{T}  # Regularization rate of change
 
+    cache::FiniteDiff.JacobianCache{Vector{T}, Vector{T}, Vector{T}, UnitRange{Int}, Nothing, Val{:forward}(), T}
     grad::Vector{T}  # Gradient
 
     logger::SolverLogger
@@ -85,6 +96,7 @@ function iLQRSolver(
     ρ = zeros(T,1)
     dρ = zeros(T,1)
 
+    cache = FiniteDiff.JacobianCache(prob.model)
     grad = zeros(T,N-1)
 
     logger = SolverLogging.default_logger(opts.verbose >= 2)
@@ -92,7 +104,8 @@ function iLQRSolver(
 	O = typeof(prob.obj)
     solver = iLQRSolver{T,QUAD,L,O,n,n̄,m,p,n+m}(prob.model, prob.obj, x0, xf,
 		prob.tf, N, opts, stats,
-        Z, Z̄, K, d, D, G, quad_exp, S, E, Q, Qprev, Q_tmp, Quu_reg, Qux_reg, ρ, dρ, grad, logger)
+        Z, Z̄, K, d, D, G, quad_exp, S, E, Q, Qprev, Q_tmp, Quu_reg, Qux_reg, ρ, dρ, 
+        cache, grad, logger)
 
     reset!(solver)
     return solver
