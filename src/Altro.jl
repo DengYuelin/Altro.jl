@@ -94,4 +94,6 @@ include("direct/direct_constraints.jl")
 include("problems.jl")
 # include("deprecated.jl")
 
+include("max_coords.jl")
+
 end # module
