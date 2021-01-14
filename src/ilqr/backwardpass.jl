@@ -32,23 +32,26 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 			dyn_exp = solver.D[k]
 
 			# Compute gains
-			Kλ, lλ = _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
+			# Kλ, lλ = _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
 
 			# Calculate cost-to-go (using unregularized Quu and Qux)
-			ΔV += _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
+			# ΔV += _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
 			
 			# flip signs
-			K[k] .*= -1
-			d[k] .*= -1
+			# K[k] .*= -1
+			# d[k] .*= -1
 
 			# # Compute Q expansion
-			# Q_exp = _calc_Q!(S[k+1], cost_exp, dyn_exp)
+			# function _calc_Q!(S, cost_exp, dyn_exp)
+			# function _calc_gains!(K, d, Q::TO.QExpansionMC, dyn_exp)
+			# function _calc_ctg!(S, Q, K, d, Kλ)
+			Q_exp = _calc_Q!(S[k+1], cost_exp, dyn_exp)
 
 			# # Compute gains
-			# Kλ = _calc_gains!(K[k], d[k], Q_exp, dyn_exp)
+			Ku,Kλ, du = _calc_gains!(K[k], d[k], Q_exp, dyn_exp)
 
 			# # Calculate cost-to-go (using unregularized Quu and Qux)
-			# ΔV += _calc_ctg!(S[k], Q_exp, K[k], d[k], Kλ)
+			ΔV += _calc_ctg!(S[k], Q_exp, K[k], d[k], Kλ)
 		else
 			ix = Z[k]._x
 			iu = Z[k]._u
@@ -308,6 +311,9 @@ function _calc_ctg!(Q::TO.StaticExpansion, K::SMatrix, d::SVector, grad_only::Bo
 end
 
 ## MC versions
+# function _calc_Q!(S, cost_exp, dyn_exp)
+# function _calc_gains!(K, d, Q::TO.QExpansionMC, dyn_exp)
+# function _calc_ctg!(S, Q, K, d, Kλ)
 
 function _calc_Q!(S, cost_exp, dyn_exp)
 	A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
@@ -317,11 +323,11 @@ function _calc_Q!(S, cost_exp, dyn_exp)
 	Qx = q + A'*s⁺
 	Qu = r + B'*s⁺
 	Qλ = C'*s⁺
-	Qux = H + B'*S⁺*A
+	Qux = H+B'*S⁺*A
 	Quu = R + B'*S⁺*B
 	Quλ = B'*S⁺*C
 	Qxx = Q + A'*S⁺*A
-	Qxu = A'*S⁺*B
+	Qxu = H'+A'*S⁺*B
 	Qxλ = A'*S⁺*C
 	Qλx = C'*S⁺*A
 	Qλu = C'*S⁺*B
@@ -345,14 +351,15 @@ function _calc_gains!(K, d, Q::TO.QExpansionMC, dyn_exp)
 	d_all = M\l
 	d .= d_all[1:m]
 	
-	return Kλ
+	return K,Kλ, d
 end
 
 function _calc_ctg!(S, Q, K, d, Kλ)
 	S.Q = Q.xx + 2*Q.xλ*Kλ + Kλ'*Q.λλ*Kλ + K'*Q.uu*K + 2*Q.xu*K + 2*Kλ'*Q.λu*K
 	S.q = Q.x + K'*Q.u + Kλ'*Q.λ + K'*Q.uu*d + Q.xu*d + Kλ'*Q.λu*d
+	S.Q = 0.5*(S.Q + S.Q')
 
-    t1 = d'Q.u
+  t1 = d'Q.u
 	t2 = 0.5*d'Q.uu*d
     return  @SVector [t1, t2]
 end
