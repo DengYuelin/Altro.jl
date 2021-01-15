@@ -32,26 +32,26 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 			dyn_exp = solver.D[k]
 
 			# Compute gains
-			# Kλ, lλ = _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
+			Kλ, lλ = _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
 
 			# Calculate cost-to-go (using unregularized Quu and Qux)
-			# ΔV += _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
+			ΔV += _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
 			
 			# flip signs
-			# K[k] .*= -1
-			# d[k] .*= -1
+			K[k] .*= -1
+			d[k] .*= -1
 
 			# # Compute Q expansion
 			# function _calc_Q!(S, cost_exp, dyn_exp)
 			# function _calc_gains!(K, d, Q::TO.QExpansionMC, dyn_exp)
 			# function _calc_ctg!(S, Q, K, d, Kλ)
-			Q_exp = _calc_Q!(S[k+1], cost_exp, dyn_exp)
+			# Q_exp = _calc_Q!(S[k+1], cost_exp, dyn_exp)
 
 			# # Compute gains
-			Ku,Kλ, du = _calc_gains!(K[k], d[k], Q_exp, dyn_exp)
+			# Ku,Kλ, du = _calc_gains!(K[k], d[k], Q_exp, dyn_exp)
 
 			# # Calculate cost-to-go (using unregularized Quu and Qux)
-			ΔV += _calc_ctg!(S[k], Q_exp, K[k], d[k], Kλ)
+			# ΔV += _calc_ctg!(S[k], Q_exp, K[k], d[k], Kλ)
 		else
 			ix = Z[k]._x
 			iu = Z[k]._u
@@ -406,7 +406,7 @@ function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ)
     S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
 
     # return ΔV
-    t1 = 0 #d'Q.u
-	t2 = 0 #0.5*d'Q.uu*d
+    t1 = -2*lu'*r
+		t2 = 0.5*lu'*R*lu
     return  @SVector [t1, t2]
 end
