@@ -20,6 +20,21 @@ function rollout!(solver::iLQRSolver{T,Q,n}, α) where {T,Q,n}
         Z̄[k+1].z = [RobotDynamics.discrete_dynamics(Q, solver.model, Z̄[k]);
             control(Z[k+1])]
 
+        # check for mc newton convergence
+        if solver.model isa AbstractModelMC
+            x = state(Z̄[k+1])
+            l1 = solver.model.l1
+            l2 = solver.model.l2
+            d1 = .5*l1*[cos(x[3]);sin(x[3])]
+            d2 = .5*l2*[cos(x[6]);sin(x[6])]
+            c = [x[1:2] - d1;
+                 (x[1:2]+d1) - (x[4:5]-d2)]
+            if norm(c) > 1e-12
+                println("not converged")
+                return false
+            end
+        end  
+
         max_x = norm(state(Z̄[k+1]),Inf)
         if max_x > solver.opts.max_state_value || isnan(max_x)
             solver.stats.status = STATE_LIMIT
