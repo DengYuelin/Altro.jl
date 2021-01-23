@@ -17,6 +17,7 @@ using Logging
 using Statistics
 using TimerOutputs
 using FiniteDiff
+using Rotations
 
 const TO = TrajectoryOptimization
 const RD = RobotDynamics
@@ -32,6 +33,7 @@ using TrajectoryOptimization:
     ConstraintList,
     AbstractObjective, Objective, QuadraticObjective,
     AbstractTrajectory,
+    GeneralDynamicsExpansion,
     DynamicsExpansion, # TODO: Move to ALTRO
     DynamicsExpansionMC,
     # ALConstraintSet,
@@ -41,7 +43,7 @@ using TrajectoryOptimization:
     Equality, Inequality, SecondOrderCone
 
 using RobotDynamics:
-    AbstractModel, AbstractModelMC,
+    AbstractModel, AbstractModelMC, RigidBodyMC,
     QuadratureRule, Implicit, Explicit,
     AbstractKnotPoint, KnotPoint, StaticKnotPoint,
     state, control
@@ -61,6 +63,8 @@ export
     iterations,
     set_options!,
     status
+export
+    is_converged
 
 # modules
 export

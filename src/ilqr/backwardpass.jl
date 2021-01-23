@@ -27,7 +27,7 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 
 	k = N-1
 	while k > 0
-		if model isa AbstractModelMC
+		if (model isa AbstractModelMC) || (model isa RigidBodyMC)
 			cost_exp = solver.E[k]
 			dyn_exp = solver.D[k]
 

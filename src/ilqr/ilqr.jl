@@ -9,7 +9,7 @@ simulates the system forward using the derived feedback control law.
 # Constructor
     Altro.iLQRSolver(prob, opts; kwarg_opts...)
 """
-struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,p,L1} <: UnconstrainedSolver{T}
+struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,p,L1,D̄} <: UnconstrainedSolver{T}
     # Model + Objective
     model::L
     obj::O
@@ -32,7 +32,7 @@ struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,p,L1} <: UnconstrainedSolver{T
     K::Vector{SizedMatrix{m,n̄,T,2,Matrix{T}}}  # State feedback gains (m,n,N-1)
     d::Vector{SizedVector{m,T,Vector{T}}}  # Feedforward gains (m,N-1)
 
-    D::Union{Vector{DynamicsExpansion{T,n,n̄,m}}, Vector{DynamicsExpansionMC{T,n,n̄,m,p}}}  # discrete dynamics jacobian (block) (n,n+m+1,N)
+    D::Vector{D̄}
     G::Vector{SizedMatrix{n,n̄,T,2,Matrix{T}}}        # state difference jacobian (n̄, n)
 
 	quad_obj::QuadraticObjective{n,m,T}  # quadratic expansion of obj
@@ -65,6 +65,7 @@ function iLQRSolver(
     # Init solver results
     n,m,N = size(prob)
     n̄ = RobotDynamics.state_diff_size(prob.model)
+    p = 0
 
     x0 = prob.x0
     xf = prob.xf
@@ -76,12 +77,16 @@ function iLQRSolver(
 	K = [zeros(T,m,n̄) for k = 1:N-1]
     d = [zeros(T,m)   for k = 1:N-1]
 
-	D = [DynamicsExpansion{T}(n,n̄,m) for k = 1:N-1]
+    D = [DynamicsExpansion{T}(n,n̄,m) for k = 1:N-1]
 	G = [SizedMatrix{n,n̄}(zeros(n,n̄)) for k = 1:N+1]  # add one to the end to use as an intermediate result
     
-    if prob.model isa AbstractModelMC
+    if (prob.model isa AbstractModelMC) || (prob.model isa RigidBodyMC)
         p = prob.model.p # add function for constraint size?
-        D = [TO.DynamicsExpansionMC{Float64}(n,m,p) for k = 1:N]
+        if prob.model isa RigidBodyMC
+            D = [TO.DynamicsExpansionMC{T}(n̄,m,p) for k = 1:N]
+        else
+            D = [TO.DynamicsExpansionMC{T}(n,m,p) for k = 1:N]
+        end
     end
     
     E = QuadraticObjective(n̄,m,N)
@@ -102,7 +107,7 @@ function iLQRSolver(
     logger = SolverLogging.default_logger(opts.verbose >= 2)
 	L = typeof(prob.model)
 	O = typeof(prob.obj)
-    solver = iLQRSolver{T,QUAD,L,O,n,n̄,m,p,n+m}(prob.model, prob.obj, x0, xf,
+    solver = iLQRSolver{T,QUAD,L,O,n,n̄,m,p,n+m,eltype(D)}(prob.model, prob.obj, x0, xf,
 		prob.tf, N, opts, stats,
         Z, Z̄, K, d, D, G, quad_exp, S, E, Q, Qprev, Q_tmp, Quu_reg, Qux_reg, ρ, dρ, 
         cache, grad, logger)
