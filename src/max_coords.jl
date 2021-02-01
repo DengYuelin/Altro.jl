@@ -39,3 +39,12 @@ end
 function TO.error_expansion!(D::Vector{<:TO.DynamicsExpansionMC}, model, G)
 	return
 end
+
+@inline config_size(model) = throw(ErrorException("not implemented"))
+
+function mc_dims(model)
+  nq = config_size(model)
+  nv = RD.state_dim(model) - nq
+  nc = model.p
+  return nq, nv, nc
+end

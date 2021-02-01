@@ -64,7 +64,9 @@ export
     set_options!,
     status
 export
-    is_converged
+    is_converged,
+    config_size,
+    mc_dims
 
 # modules
 export
