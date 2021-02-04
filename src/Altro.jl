@@ -43,7 +43,7 @@ using TrajectoryOptimization:
     Equality, Inequality, SecondOrderCone
 
 using RobotDynamics:
-    AbstractModel, AbstractModelMC, RigidBodyMC,
+    AbstractModel, AbstractModelMC, RigidBodyMC, LieGroupModelMC,
     QuadratureRule, Implicit, Explicit,
     AbstractKnotPoint, KnotPoint, StaticKnotPoint,
     state, control
