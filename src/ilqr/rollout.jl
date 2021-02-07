@@ -25,7 +25,7 @@ function rollout!(solver::iLQRSolver{T,Q,n}, α) where {T,Q,n}
             return false
         end
 
-        if (solver.model isa AbstractModelMC) || (solver.model isa RigidBodyMC) 
+        if (solver.model isa AbstractModelMC) || (solver.model isa RigidBodyMC) || (solver.model isa LieGroupModelMC) 
             if ~(is_converged(model, state(Z̄[k+1])))
                 return false
             end
