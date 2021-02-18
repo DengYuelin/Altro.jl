@@ -81,12 +81,8 @@ function iLQRSolver(
 	G = [SizedMatrix{n,n̄}(zeros(n,n̄)) for k = 1:N+1]  # add one to the end to use as an intermediate result
     
     if (prob.model isa AbstractModelMC) || (prob.model isa RigidBodyMC) || (prob.model isa LieGroupModelMC)
+        D = [TO.DynamicsExpansionMC(prob.model) for k = 1:N]
         p = prob.model.p # add function for constraint size?
-        if (prob.model isa RigidBodyMC) || (prob.model isa LieGroupModelMC)
-            D = [TO.DynamicsExpansionMC{T}(n̄,m,p) for k = 1:N]
-        else
-            D = [TO.DynamicsExpansionMC{T}(n,m,p) for k = 1:N]
-        end
     end
     
     E = QuadraticObjective(n̄,m,N)

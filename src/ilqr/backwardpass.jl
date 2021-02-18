@@ -4,6 +4,8 @@ Calculates the optimal feedback gains K,d as well as the 2nd Order approximation
 Cost-to-Go, using a backward Riccati-style recursion. (non-allocating)
 """
 function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:QuadratureRule,L,O,n,n̄,m}
+	to = solver.stats.to
+    
 	N = solver.N
 
     # Objective
@@ -32,10 +34,10 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 			dyn_exp = solver.D[k]
 
 			# Compute gains
-			Kλ, lλ = _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
+			Kλ, lλ = @timeit_debug to "calc gains" _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
 
 			# Calculate cost-to-go (using unregularized Quu and Qux)
-			ΔV += _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
+			ΔV += @timeit_debug to "calc ctg" _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
 			
 			# flip signs
 			K[k] .*= -1
