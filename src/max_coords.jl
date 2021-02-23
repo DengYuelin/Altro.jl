@@ -22,7 +22,13 @@ end
 function TO.dynamics_expansion!(Q, D::Vector{<:TO.DynamicsExpansionMC}, model,
   Z::Traj)
   for k in eachindex(D)
-    discrete_jacobian_MC!(Q, D[k].∇f, D[k].G, model, Z[k])
+	if Z[k].dt == 0
+		z = copy(Z[k])
+		z.dt = Z[1].dt
+		discrete_jacobian_MC!(Q, D[k].∇f, D[k].G, model, z)
+	else
+    	discrete_jacobian_MC!(Q, D[k].∇f, D[k].G, model, Z[k])
+	end
   end
 end
 
