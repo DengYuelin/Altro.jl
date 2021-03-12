@@ -1,42 +1,42 @@
 ## MAX COORD SPECIFIC FUNCTIONS
 @inline is_converged(::AbstractModel,x) = throw(ErrorException("is_converged not implemented"))
 
-@inline discrete_jacobian_MC!(Q, ∇f, G, model, z) = throw(ErrorException("discrete_jacobian_MC not implemented"))
+@inline discrete_jacobian_MC!(Q, Dexp, model, z) = throw(ErrorException("discrete_jacobian_MC not implemented"))
 
 @inline config_size(model) = throw(ErrorException("not implemented"))
 
 function mc_dims(model)
-  nq = config_size(model)
-  nv = RD.state_dim(model) - nq
-  nc = model.p
-  return nq, nv, nc
+	nq = config_size(model)
+	nv = RD.state_dim(model) - nq
+	nc = model.p
+	return nq, nv, nc
 end
 
 ## MIRRORED FUNCTIONS FROM TO - expansions.jl
 function TO.save_tmp!(D::TO.DynamicsExpansionMC)
 	D.tmpA .= D.A_
 	D.tmpB .= D.B_
-  D.tmpC .= D.C_
+  	D.tmpC .= D.C_
 end
 
-function TO.dynamics_expansion!(Q, D::Vector{<:TO.DynamicsExpansionMC}, model,
-  Z::Traj)
-  for k in eachindex(D)
+function TO.dynamics_expansion!(Q, D::Vector{<:TO.DynamicsExpansionMC}, model, 
+	Z::Traj)
+    for k in eachindex(D)
 	if Z[k].dt == 0
 		z = copy(Z[k])
 		z.dt = Z[1].dt
-		discrete_jacobian_MC!(Q, D[k].∇f, D[k].G, model, z)
+		discrete_jacobian_MC!(Q, D[k], model, z)
 	else
-    	discrete_jacobian_MC!(Q, D[k].∇f, D[k].G, model, Z[k])
+    	discrete_jacobian_MC!(Q, D[k], model, Z[k])
 	end
-  end
+    end
 end
 
 function TO.error_expansion!(D::TO.DynamicsExpansionMC, G1, G2)
-  mul!(D.tmp, D.tmpA, G1)
-  mul!(D.A, Transpose(G2), D.tmp)
-  mul!(D.B, Transpose(G2), D.tmpB)
-  mul!(D.C, Transpose(G2), D.tmpC)
+    mul!(D.tmp, D.tmpA, G1)
+    mul!(D.A, Transpose(G2), D.tmp)
+    mul!(D.B, Transpose(G2), D.tmpB)
+    mul!(D.C, Transpose(G2), D.tmpC)
 	return
 end
 
