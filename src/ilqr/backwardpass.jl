@@ -29,7 +29,7 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 
 	k = N-1
 	while k > 0
-		if (model isa AbstractModelMC) || (model isa RigidBodyMC) || (model isa LieGroupModelMC)
+		if is_MC_model(model)
 			cost_exp = solver.E[k]
 			dyn_exp = solver.D[k]
 
@@ -37,7 +37,7 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 			Kλ, lλ = @timeit_debug to "calc gains" _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
 
 			# Calculate cost-to-go (using unregularized Quu and Qux)
-			ΔV += @timeit_debug to "calc ctg" _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ)
+			ΔV += @timeit_debug to "calc ctg" _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ, solver.Q_tmp, solver.tmp)
 			
 			# flip signs
 			K[k] .*= -1
@@ -398,17 +398,58 @@ function _calc_gains!(K, d, S, cost_exp, dyn_exp)
     return Kλ, lλ
 end
 
-function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ)
-    A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
-    Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
+function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ, tmp1, Abar_Q)
+	## old
+	# A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
+    # Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
     
-    Abar = A -B*Ku -C*Kλ
-    bbar = -B*lu -C*lλ
-    S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
-    S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
+    # Abar = A -B*Ku -C*Kλ
+    # bbar = -B*lu -C*lλ
+    # S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
+    # S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
 
-    # return ΔV
-    t1 = -2*lu'*r
-		t2 = 0.5*lu'*R*lu
+    # # return ΔV
+    # t1 = -2*lu'*r
+	# 	t2 = 0.5*lu'*R*lu
+    # return  @SVector [t1, t2]
+
+	# in place
+	A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
+    Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
+	Abar, bbar, Ku_R = tmp1.Q, tmp1.q, tmp1.H
+
+	# Abar = A -B*Ku -C*Kλ
+	mul!(Abar, B, Ku) # B*Ku
+	mul!(Abar, C, Kλ, -1.0, -1.0) # -B*Ku -C*Kλ
+	Abar .+= A 
+
+    # bbar = -B*lu -C*lλ
+	mul!(bbar, B, lu) # B*lu
+	mul!(bbar, C, lλ, -1.0, -1.0) # -B*lu -C*lλ
+
+	# S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
+	# S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
+	# mul!(C, A, B, α, β) -> C = ABα + Cβ
+
+	mul!(Ku_R, Transpose(R), Ku) # R'*Ku
+	mul!(S.Q, Transpose(Ku_R), Ku) # Ku'R*Ku
+	mul!(S.q, Transpose(Ku_R), lu) # Ku'*R*lu
+
+	mul!(Abar_Q, Transpose( S⁺.Q), Abar) # S⁺.Q'*Abar
+	mul!(S.Q, Transpose(Abar_Q), Abar, 1.0, 1.0) # Abar'*S⁺.Q*Abar
+	mul!(S.q, Transpose(Abar_Q), bbar, 1.0, 1.0) # Abar'*S⁺.Q*bbar
+
+	mul!(S.q, Transpose(Ku), r, -1.0, 1.0) # - Ku'*r
+	mul!(S.q, Transpose(Abar), S⁺.q, 1.0, 1.0) # Abar'*S⁺.q
+
+	S.Q .+= Q
+	S.q .+= q
+
+	# t1 = -2*lu'*r
+	t1 = -2*dot(lu, r)
+
+	# t2 = 0.5*lu'*R*lu
+	mul!(tmp1.r, R, lu) # R*lu
+	t2 = 0.5*dot(lu, tmp1.r) # 0.5*lu'*R*lu
     return  @SVector [t1, t2]
 end

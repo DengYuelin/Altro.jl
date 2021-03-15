@@ -1,6 +1,7 @@
 
 function rollout!(solver::iLQRSolver{T,Q,n}, α) where {T,Q,n}
     Z = solver.Z; Z̄ = solver.Z̄
+    Λ = solver.Λ
     K = solver.K; d = solver.d;
     model = solver.model
 
@@ -18,17 +19,21 @@ function rollout!(solver::iLQRSolver{T,Q,n}, α) where {T,Q,n}
         RobotDynamics.set_control!(Z̄[k], ū)
 
         # Z̄[k].z = [state(Z̄[k]); control(Z[k]) + δu]
-        try
-            Z̄[k+1].z = [RobotDynamics.discrete_dynamics(Q, solver.model, Z̄[k]);
-                control(Z[k+1])]
-        catch
-            return false
-        end
-
-        if (solver.model isa AbstractModelMC) || (solver.model isa RigidBodyMC) || (solver.model isa LieGroupModelMC) 
+        if is_MC_model(model)            
+            try
+                x⁺, Λ[k] = discrete_dynamics_MC(Q, model, state(Z̄[k]), control(Z̄[k]), Z̄[k].t, Z̄[k].dt)
+                Z̄[k+1].z = [x⁺; control(Z[k+1])]
+            catch
+                println("catch: discrete_dynamics_MC")
+                return false
+            end
+            
             if ~(is_converged(model, state(Z̄[k+1])))
                 return false
             end
+        else # rc model
+            Z̄[k+1].z = [RobotDynamics.discrete_dynamics(Q, solver.model, Z̄[k]);
+            control(Z[k+1])]
         end
 
         max_x = norm(state(Z̄[k+1]),Inf)

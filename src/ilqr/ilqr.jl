@@ -27,6 +27,10 @@ struct iLQRSolver{T,I<:QuadratureRule,L,O,n,n̄,m,p,L1,D̄} <: UnconstrainedSolv
     Z::Traj{n,m,T,KnotPoint{T,n,m,L1}}
     Z̄::Traj{n,m,T,KnotPoint{T,n,m,L1}}
 
+    # For max coords models
+    Λ::Vector{Vector{T}}
+    tmp::SizedMatrix{n̄,n̄,T,2,Matrix{T}}
+
     # Data variables
     # K::Vector{SMatrix{m,n̄,T,L2}}  # State feedback gains (m,n,N-1)
     K::Vector{SizedMatrix{m,n̄,T,2,Matrix{T}}}  # State feedback gains (m,n,N-1)
@@ -80,9 +84,14 @@ function iLQRSolver(
     D = [DynamicsExpansion{T}(n,n̄,m) for k = 1:N-1]
 	G = [SizedMatrix{n,n̄}(zeros(n,n̄)) for k = 1:N+1]  # add one to the end to use as an intermediate result
     
-    if (prob.model isa AbstractModelMC) || (prob.model isa RigidBodyMC) || (prob.model isa LieGroupModelMC)
-        D = [TO.DynamicsExpansionMC(prob.model) for k = 1:N]
+    # for mc
+    Λ = [[]]
+    tmp = SizedMatrix{n̄,n̄}(zeros(n̄,n̄))
+
+    if is_MC_model(prob.model)
+        D = [TO.DynamicsExpansionMC(prob.model) for k = 1:N-1]
         p = prob.model.p # add function for constraint size?
+        Λ = [zeros(p) for k = 1:N]
     end
     
     E = QuadraticObjective(n̄,m,N)
@@ -105,7 +114,7 @@ function iLQRSolver(
 	O = typeof(prob.obj)
     solver = iLQRSolver{T,QUAD,L,O,n,n̄,m,p,n+m,eltype(D)}(prob.model, prob.obj, x0, xf,
 		prob.tf, N, opts, stats,
-        Z, Z̄, K, d, D, G, quad_exp, S, E, Q, Qprev, Q_tmp, Quu_reg, Qux_reg, ρ, dρ, 
+        Z, Z̄, Λ, tmp, K, d, D, G, quad_exp, S, E, Q, Qprev, Q_tmp, Quu_reg, Qux_reg, ρ, dρ, 
         cache, grad, logger)
 
     reset!(solver)

@@ -1,7 +1,12 @@
 ## MAX COORD SPECIFIC FUNCTIONS
+@inline is_MC_model(model::AbstractModel) = (model isa AbstractModelMC) || (model isa RigidBodyMC) || (model isa LieGroupModelMC) 
+
 @inline is_converged(::AbstractModel,x) = throw(ErrorException("is_converged not implemented"))
 
-@inline discrete_jacobian_MC!(Q, Dexp, model, z) = throw(ErrorException("discrete_jacobian_MC not implemented"))
+@inline discrete_dynamics_MC(Q, model,  x, u, t, dt)= throw(ErrorException("discrete_dynamics_MC not implemented"))
+
+# @inline discrete_jacobian_MC!(Q, Dexp, model, z) = throw(ErrorException("discrete_jacobian_MC not implemented"))
+@inline discrete_jacobian_MC!(Q, Dexp, model, z, x⁺, λ) = throw(ErrorException("discrete_jacobian_MC not implemented"))
 
 @inline config_size(model) = throw(ErrorException("not implemented"))
 
@@ -19,16 +24,20 @@ function TO.save_tmp!(D::TO.DynamicsExpansionMC)
   	D.tmpC .= D.C_
 end
 
+# call RC version if model is RC
+TO.dynamics_expansion!(Q, D::Vector{<:TO.DynamicsExpansion}, model, Z::Traj, Λ) =
+	TO.dynamics_expansion!(Q, D, model, Z) 
+
 function TO.dynamics_expansion!(Q, D::Vector{<:TO.DynamicsExpansionMC}, model, 
-	Z::Traj)
+	Z::Traj, Λ)
     for k in eachindex(D)
-	if Z[k].dt == 0
-		z = copy(Z[k])
-		z.dt = Z[1].dt
-		discrete_jacobian_MC!(Q, D[k], model, z)
-	else
-    	discrete_jacobian_MC!(Q, D[k], model, Z[k])
-	end
+		if Z[k].dt == 0
+			z = copy(Z[k])
+			z.dt = Z[1].dt
+			discrete_jacobian_MC!(Q, D[k], model, z, state(Z[k+1]), Λ[k])
+		else
+			discrete_jacobian_MC!(Q, D[k], model, Z[k], state(Z[k+1]), Λ[k])
+		end
     end
 end
 
