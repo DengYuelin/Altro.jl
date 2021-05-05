@@ -313,60 +313,7 @@ function _calc_ctg!(Q::TO.StaticExpansion, K::SMatrix, d::SVector, grad_only::Bo
 end
 
 ## MC versions
-# function _calc_Q!(S, cost_exp, dyn_exp)
-# function _calc_gains!(K, d, Q::TO.QExpansionMC, dyn_exp)
-# function _calc_ctg!(S, Q, K, d, Kλ)
 
-function _calc_Q!(S, cost_exp, dyn_exp)
-	A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
-    Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
-	S⁺, s⁺ = S.Q, S.q
-
-	Qx = q + A'*s⁺
-	Qu = r + B'*s⁺
-	Qλ = C'*s⁺
-	Qux = H+B'*S⁺*A
-	Quu = R + B'*S⁺*B
-	Quλ = B'*S⁺*C
-	Qxx = Q + A'*S⁺*A
-	Qxu = H'+A'*S⁺*B
-	Qxλ = A'*S⁺*C
-	Qλx = C'*S⁺*A
-	Qλu = C'*S⁺*B
-	Qλλ = C'*S⁺*C
-
-	return TO.QExpansionMC(Qx, Qu, Qλ, Qux, Quu, Quλ, Qxx, Qxu, Qxλ, Qλx, Qλu, Qλλ)
-end
-
-function _calc_gains!(K, d, Q::TO.QExpansionMC, dyn_exp)
-	A,B,C,G = dyn_exp.A, dyn_exp.B, dyn_exp.C, dyn_exp.G
-	m,p = size(Q.uλ)
-	
-	M = [Q.uu Q.uλ; G*B G*C]
-	b = [-Q.ux; -G*A]
-	l = [-Q.u; zeros(p)]
-
-	K_all = M\b
-	K .= K_all[1:m,:]
-	Kλ = K_all[m .+ (1:p),:]
-	
-	d_all = M\l
-	d .= d_all[1:m]
-	
-	return K,Kλ, d
-end
-
-function _calc_ctg!(S, Q, K, d, Kλ)
-	S.Q = Q.xx + 2*Q.xλ*Kλ + Kλ'*Q.λλ*Kλ + K'*Q.uu*K + 2*Q.xu*K + 2*Kλ'*Q.λu*K
-	S.q = Q.x + K'*Q.u + Kλ'*Q.λ + K'*Q.uu*d + Q.xu*d + Kλ'*Q.λu*d
-	S.Q = 0.5*(S.Q + S.Q')
-
-  t1 = d'Q.u
-	t2 = 0.5*d'Q.uu*d
-    return  @SVector [t1, t2]
-end
-
-# OLD
 function _calc_gains!(K, d, S, cost_exp, dyn_exp)
     S⁺, s⁺ = S.Q, S.q
     Q,q,R,r,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.c 
@@ -404,19 +351,24 @@ function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ, tmp1, Abar_Q)
     # Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
     
     # Abar = A -B*Ku -C*Kλ
-    # bbar = -B*lu -C*lλ
+    # bbar = -B*lu 
+
+    # t1 = -lu'*r -S.q'*(B*lu)
+	# t2 = 0.5*lu'*R*lu + lu'*(B'*S.Q*B)*lu
+
     # S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
     # S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
 
     # # return ΔV
-    # t1 = -2*lu'*r
-	# 	t2 = 0.5*lu'*R*lu
     # return  @SVector [t1, t2]
 
 	# in place
 	A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
     Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
 	Abar, bbar, Ku_R = tmp1.Q, tmp1.q, tmp1.H
+
+    t1 = -lu'*r - S⁺.q'*(B*lu)
+	t2 = 0.5*lu'*R*lu + 0.5*lu'*(B'*S⁺.Q*B)*lu
 
 	# Abar = A -B*Ku -C*Kλ
 	mul!(Abar, B, Ku) # B*Ku
@@ -446,10 +398,10 @@ function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ, tmp1, Abar_Q)
 	S.q .+= q
 
 	# t1 = -2*lu'*r
-	t1 = -2*dot(lu, r)
+	# t1 = -2*dot(lu, r)
 
 	# t2 = 0.5*lu'*R*lu
-	mul!(tmp1.r, R, lu) # R*lu
-	t2 = 0.5*dot(lu, tmp1.r) # 0.5*lu'*R*lu
+	# mul!(tmp1.r, R, lu) # R*lu
+	# t2 = 0.5*dot(lu, tmp1.r) # 0.5*lu'*R*lu
     return  @SVector [t1, t2]
 end

@@ -156,6 +156,7 @@ function forwardpass!(solver::iLQRSolver, ΔV, J_prev)
         else
             z = -1.0
         end
+        # println(z, " | expected:", expected, " | ΔV[1]:", ΔV[1], " | ΔV[2]: ", ΔV[2], " | α: ", α, " | iter: ", iter, " | J_prev - J: ", J_prev - J)
 
         iter += 1
         α /= 2.0

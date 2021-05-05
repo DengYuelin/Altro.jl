@@ -67,10 +67,10 @@ function TO.error_expansion!(D::Vector{<:TO.DynamicsExpansionMC}, model::Abstrac
 end
 
 function TO.error_expansion!(D::Vector{<:TO.DynamicsExpansionMC}, model::LieGroupModelMC, G)
-	for k in eachindex(D)
-		TO.save_tmp!(D[k])
-		TO.error_expansion!(D[k], G[k], G[k+1])
-	end
+	# for k in eachindex(D)
+	# 	TO.save_tmp!(D[k])
+	# 	TO.error_expansion!(D[k], G[k], G[k+1])
+	# end
 end
 
 function TO.error_expansion!(D::Vector{<:TO.DynamicsExpansionMC}, model::RigidBodyMC, G)
