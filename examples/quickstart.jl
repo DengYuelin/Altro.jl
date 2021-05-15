@@ -34,19 +34,22 @@ add_constraint!(conSet, goal, N)
 # Initialization
 u0 = @SVector fill(0.01,m)
 U0 = [u0 for k = 1:N-1]
-
+begin
 # Define problem
 prob = Problem(model, obj, xf, tf, x0=x0, constraints=conSet)
 initial_controls!(prob, U0)
 
 # Solve with ALTRO
 opts = SolverOptions(
+    verbose=7, 
     cost_tolerance_intermediate=1e-2,
     penalty_scaling=10.,
     penalty_initial=1.0
 )
-altro = ALTROSolver(prob, opts)
-solve!(altro)
+altro = ALTROSolver(prob, opts);
+solve!(altro);
+aaa = 1;
+end
 
 # Get some info on the solve
 max_violation(altro)  # 3.42e-9

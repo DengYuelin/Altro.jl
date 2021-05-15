@@ -3,7 +3,7 @@
 Calculates the optimal feedback gains K,d as well as the 2nd Order approximation of the
 Cost-to-Go, using a backward Riccati-style recursion. (non-allocating)
 """
-function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:QuadratureRule,L,O,n,n̄,m}
+function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m,p,nk,L1,D̄}) where {T,QUAD<:QuadratureRule,L,O,n,n̄,m,p,nk,L1,D̄}
 	to = solver.stats.to
     
 	N = solver.N
@@ -27,33 +27,187 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
     # Initialize expecte change in cost-to-go
     ΔV = @SVector zeros(2)
 
+	# in the new derivation, these are used in mc model 
+    β::Float64 = 1e-6    
+	nx::Int = n̄   # notice the LQR is working with error state 
+	nu::Int = m
+    ncxu::Int = 0
+    nm1::Int = 0
+    idx2::Int = 0
+    idx3::Int = 0
+    idx4::Int = 0
+    idx5::Int = 0
+
+	if is_MC_model(model)
+		ncxu = p
+		nm1 = N-1
+		idx2 = nu+1
+		idx3 = nu+ncxu
+		idx4 = nu+ncxu+1
+		idx5 = nk
+	end
+
 	k = N-1
 	while k > 0
 		if is_MC_model(model)
+			# new derivation, tmp data structures are in iLQRSolver
 			cost_exp = solver.E[k]
 			dyn_exp = solver.D[k]
+			# assume no H
+            Q,q,R,r = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r
+            A,B,C,dG = dyn_exp.A, dyn_exp.B, dyn_exp.C, dyn_exp.G    # this is already a G in solver (state difference jacobian)
+            Vxx = S[k+1].Q
+            vx = S[k+1].q
 
-			# Compute gains
-			Kλ, lλ = @timeit_debug to "calc gains" _calc_gains!(K[k], d[k], S[k+1], cost_exp, dyn_exp)
+			solver.tmp_nunu[1] .= R
+            mul!(solver.tmp_nxnu[1], Vxx, B)  # Vxx*B 
+            mul!(solver.tmp_nunu[1], Transpose(B), solver.tmp_nxnu[1], 1.0, 1.0)  # R+B'*Vxx*B
+            solver.M[1:nu,1:nu] .= solver.tmp_nunu[1]
 
-			# Calculate cost-to-go (using unregularized Quu and Qux)
-			ΔV += @timeit_debug to "calc ctg" _calc_ctg!(S[k], S[k+1], cost_exp, dyn_exp, K[k], d[k], Kλ, lλ, solver.Q_tmp, solver.tmp)
-			
-			# flip signs
-			K[k] .*= -1
-			d[k] .*= -1
+            mul!(solver.tmp_nxncxu[1], Vxx, C)  # Vxx*C 
+            mul!(solver.tmp_nuncxu[1], Transpose(B), solver.tmp_nxncxu[1])  # B'Vxx*C 
+            solver.M[1:nu,idx2:idx3] .= solver.tmp_nuncxu[1]
+            solver.M[idx2:idx3,1:nu] .= Transpose(solver.tmp_nuncxu[1])
 
-			# # Compute Q expansion
-			# function _calc_Q!(S, cost_exp, dyn_exp)
-			# function _calc_gains!(K, d, Q::TO.QExpansionMC, dyn_exp)
-			# function _calc_ctg!(S, Q, K, d, Kλ)
-			# Q_exp = _calc_Q!(S[k+1], cost_exp, dyn_exp)
 
-			# # Compute gains
-			# Ku,Kλ, du = _calc_gains!(K[k], d[k], Q_exp, dyn_exp)
+            mul!(solver.tmp_nuncxu[1], Transpose(B), Transpose(dG))  # B'*G' 
+            solver.M[1:nu,idx4:idx5] .= solver.tmp_nuncxu[1]
+            solver.M[idx4:idx5,1:nu] .= Transpose(solver.tmp_nuncxu[1])
 
-			# # Calculate cost-to-go (using unregularized Quu and Qux)
-			# ΔV += _calc_ctg!(S[k], Q_exp, K[k], d[k], Kλ)
+
+            mul!(solver.tmp_ncxuncxu[1], Transpose(C), Transpose(dG))  # C'*G' 
+            solver.M[idx2:idx3,idx4:idx5] .= solver.tmp_ncxuncxu[1]
+            solver.M[idx4:idx5,idx2:idx3] .= Transpose(solver.tmp_ncxuncxu[1])
+
+            solver.tmp_ncxuncxu[1] .= 0
+            for j=1:ncxu
+                solver.tmp_ncxuncxu[1][j,j] = 1.0
+            end
+            solver.tmp_ncxuncxu[1] .*= β
+
+        # @time begin
+            solver.tmp_ncxuncxu[2] .= solver.tmp_ncxuncxu[1]   # β*I(ncxu)
+            mul!(solver.tmp_ncxuncxu[2], Transpose(C), solver.tmp_nxncxu[1], 1.0, 1.0)  # β*I(ncxu) + C'Vxx*C
+            solver.M[idx2:idx3,idx2:idx3] .= solver.tmp_ncxuncxu[2]
+
+            solver.tmp_ncxuncxu[1] .*= -1.0
+            solver.M[idx4:idx5,idx4:idx5] .= solver.tmp_ncxuncxu[1]   # -β*I(ncxu)
+
+
+            mul!(solver.tmp_nxnx[1], Vxx, A)  # Vxx*A
+            mul!(solver.tmp_nunx[1], Transpose(B), solver.tmp_nxnx[1])  # B'Vxx*A
+            mul!(solver.tmp_ncxunx[1], Transpose(C), solver.tmp_nxnx[1])  # C'Vxx*A
+            mul!(solver.tmp_ncxunx[2], dG, A)  # G*A
+            solver.mb[1:nu,:] .= solver.tmp_nunx[1]
+            solver.mb[idx2:idx3,:] .= solver.tmp_ncxunx[1]
+            solver.mb[idx4:idx5,:] .= solver.tmp_ncxunx[2]
+
+            solver.K_all .= solver.M\solver.mb
+            for ii=1:m
+                for jj=1:nx
+                    solver.Ku[ii,jj] = solver.K_all[ii,jj]
+                end
+            end
+            
+            for ii=1:p
+                for jj=1:nx
+                    solver.Kλ[ii,jj] = solver.K_all[m+ii,jj]
+                end
+            end
+
+            solver.tmp_nu[1] .= r
+            mul!(solver.tmp_nu[1], Transpose(B), vx, 1.0 ,1.0)
+            solver.md[1:nu] .= solver.tmp_nu[1]
+
+            mul!(solver.tmp_ncxu[1], Transpose(C), vx)
+            solver.md[idx2:idx3] .= solver.tmp_ncxu[1]
+            
+            solver.l_all .= solver.M\solver.md
+
+            # solver.lu .= solver.l_all[1:m]
+            for ii=1:m
+                solver.lu[ii] = solver.l_all[ii]
+            end
+            # solver.lλ .= solver.l_all[m .+ (1:p)]
+            for ii=1:p
+                solver.lλ[ii] = solver.l_all[m+ii]
+            end
+
+            solver.kl_list[k] .= solver.lu;
+            lmul!(-1.0, solver.kl_list[k])
+            solver.Kx_list[k] .= solver.Ku;
+            lmul!(-1.0, solver.Kx_list[k])
+
+            solver.Kλ_list[k] .= solver.Kλ;
+            lmul!(-1.0, solver.Kλ_list[k])
+            solver.kλ_list[k] .= solver.lλ;
+            lmul!(-1.0, solver.kλ_list[k])
+
+            solver.Abar .= A 
+            mul!(solver.Abar, B, solver.Ku, -1.0, 1.0)  # A - BKu
+            mul!(solver.Abar, C, solver.Kλ, -1.0, 1.0)
+
+            solver.bbar .= 0
+            mul!(solver.bbar, B, solver.lu, -1.0, 1.0)
+            mul!(solver.bbar, C, solver.lλ, -1.0, 1.0)
+        # end
+        # @time begin
+            mul!(solver.tmp_nx[1], B, solver.lu)
+            t1 = dot(solver.lu,r)  # compare to -solver.lu'*r, no memory allocation
+            t1 = -1.0*t1 
+            t1 -= dot(vx,solver.tmp_nx[1])
+
+
+            mul!(solver.tmp_nu[1], R, solver.lu)
+            t2 = dot(solver.lu,solver.tmp_nu[1])     # compare to 0.5*solver.lu'*tmp_nu[1], no memory allocation
+            t2 = 0.5*t2
+            mul!(solver.tmp_nxnu[1], Vxx, B)
+            mul!(solver.tmp_nunu[1], Transpose(B), solver.tmp_nxnu[1])
+
+            mul!(solver.tmp_nu[2], solver.tmp_nunu[1], solver.lu)
+            t2 += dot(solver.lu, solver.tmp_nu[2])
+
+        # end
+            #S[k].Q .= Q + Ku'*R*Ku + Abar'*solver.Vxx_list[i+1]*Abar + β*Kλ'*Kλ
+            S[k].Q .= Q
+            mul!(solver.tmp_nunx[1], R, solver.Ku)  # R*Ku
+            mul!(solver.tmp_nxnx[1], Transpose(solver.Ku), solver.tmp_nunx[1])  # Ku'*R*Ku
+            S[k].Q .+= solver.tmp_nxnx[1]
+
+            mul!(solver.tmp_nxnx[2], Vxx, solver.Abar)  # solver.Vxx_list[i+1]*Abar
+            mul!(solver.tmp_nxnx[3], Transpose(solver.Abar), solver.tmp_nxnx[2])  # Abar'*solver.Vxx_list[i+1]*Abar
+            S[k].Q .+= solver.tmp_nxnx[3]
+
+            mul!(solver.tmp_nxnx[4], Transpose(solver.Kλ), solver.Kλ) #Kλ'*Kλ
+            solver.tmp_nxnx[4] .*= β
+            S[k].Q .+= solver.tmp_nxnx[4]
+
+            #S[k].q .= q - Ku'*r + Ku'*R*lu + β*Kλ'*lλ + Abar'*solver.Vxx_list[i+1]*bbar + Abar'*solver.vx_list[i+1]
+            S[k].q .= q
+            mul!(solver.tmp_nx[1], Transpose(solver.Ku), r)  # Ku'*r
+            S[k].q .-= solver.tmp_nx[1]     # q - Ku'*r
+
+            mul!(solver.tmp_nu[1], R, solver.lu)  # R*lu
+            mul!(solver.tmp_nx[2], Transpose(solver.Ku), solver.tmp_nu[1])  # Ku'*R*lu
+            S[k].q .+= solver.tmp_nx[2]     # q - Ku'*r + Ku'*R*lu
+
+            mul!(solver.tmp_nx[3], Transpose(solver.Kλ), solver.lλ)  # Kλ'*lλ
+            solver.tmp_nx[3] .*= β
+            S[k].q .+= solver.tmp_nx[3]    # q - Ku'*r + Ku'*R*lu + β*Kλ'*lλ
+
+            mul!(solver.tmp_nx[4], Vxx, solver.bbar)
+            mul!(solver.tmp_nx[5], Transpose(solver.Abar), solver.tmp_nx[4]) #Abar'*solver.Vxx_list[i+1]*bbar
+            S[k].q .+= solver.tmp_nx[5] 
+
+            mul!(solver.tmp_nx[1], Transpose(solver.Abar), vx)
+            S[k].q .+= solver.tmp_nx[1]                            # + Abar'*solver.vx_list[i+1]
+            
+            ΔV += @SVector [t1, t2]
+
+			#output to K and d
+			K[k] .= solver.Kx_list[k]
+			d[k] .= solver.kl_list[k]
+
 		else
 			ix = Z[k]._x
 			iu = Z[k]._u
@@ -98,7 +252,7 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}) where {T,QUAD<:Qu
 
 end
 
-function static_backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m}, grad_only=false) where {T,QUAD<:QuadratureRule,L,O,n,n̄,m}
+function static_backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m,p,nk,L1,D̄}, grad_only=false) where {T,QUAD<:QuadratureRule,L,O,n,n̄,m,p,nk,L1,D̄}
 	N = solver.N
 
     # Objective
@@ -312,96 +466,3 @@ function _calc_ctg!(Q::TO.StaticExpansion, K::SMatrix, d::SVector, grad_only::Bo
 	return Sxx, Sx, @SVector [t1, t2]
 end
 
-## MC versions
-
-function _calc_gains!(K, d, S, cost_exp, dyn_exp)
-    S⁺, s⁺ = S.Q, S.q
-    Q,q,R,r,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.c 
-    A,B,C,G = dyn_exp.A, dyn_exp.B, dyn_exp.C, dyn_exp.G
-
-    n,m = size(B)
-    _,p = size(C)
-
-    D = B - C/(G*C)*G*B
-    M11 = R + D'*S⁺*B
-    M12 = D'*S⁺*C
-    M21 = G*B
-    M22 = G*C
-
-    M = [M11 M12;M21 M22]
-    b = [D'*S⁺;G]*A
-
-    K_all = M\b
-    Ku = K_all[1:m,:]
-    Kλ = K_all[m .+ (1:p),:]
-
-    l_all = M\[r + D'*s⁺; zeros(p)]
-    lu = l_all[1:m]
-    lλ = l_all[m .+ (1:p)]
-
-    K .= Ku
-    d .= lu
-
-    return Kλ, lλ
-end
-
-function _calc_ctg!(S, S⁺, cost_exp, dyn_exp, Ku, lu, Kλ, lλ, tmp1, Abar_Q)
-	## old
-	# A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
-    # Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
-    
-    # Abar = A -B*Ku -C*Kλ
-    # bbar = -B*lu 
-
-    # t1 = -lu'*r -S.q'*(B*lu)
-	# t2 = 0.5*lu'*R*lu + lu'*(B'*S.Q*B)*lu
-
-    # S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
-    # S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
-
-    # # return ΔV
-    # return  @SVector [t1, t2]
-
-	# in place
-	A,B,C = dyn_exp.A, dyn_exp.B, dyn_exp.C
-    Q,q,R,r,H,c = cost_exp.Q,cost_exp.q,cost_exp.R,cost_exp.r,cost_exp.H,cost_exp.c
-	Abar, bbar, Ku_R = tmp1.Q, tmp1.q, tmp1.H
-
-    t1 = -lu'*r - S⁺.q'*(B*lu)
-	t2 = 0.5*lu'*R*lu + 0.5*lu'*(B'*S⁺.Q*B)*lu
-
-	# Abar = A -B*Ku -C*Kλ
-	mul!(Abar, B, Ku) # B*Ku
-	mul!(Abar, C, Kλ, -1.0, -1.0) # -B*Ku -C*Kλ
-	Abar .+= A 
-
-    # bbar = -B*lu -C*lλ
-	mul!(bbar, B, lu) # B*lu
-	mul!(bbar, C, lλ, -1.0, -1.0) # -B*lu -C*lλ
-
-	# S.Q .= Q + Ku'*R*Ku + Abar'*S⁺.Q*Abar
-	# S.q .= q - Ku'*r + Ku'*R*lu + Abar'*S⁺.Q*bbar + Abar'*S⁺.q
-	# mul!(C, A, B, α, β) -> C = ABα + Cβ
-
-	mul!(Ku_R, Transpose(R), Ku) # R'*Ku
-	mul!(S.Q, Transpose(Ku_R), Ku) # Ku'R*Ku
-	mul!(S.q, Transpose(Ku_R), lu) # Ku'*R*lu
-
-	mul!(Abar_Q, Transpose( S⁺.Q), Abar) # S⁺.Q'*Abar
-	mul!(S.Q, Transpose(Abar_Q), Abar, 1.0, 1.0) # Abar'*S⁺.Q*Abar
-	mul!(S.q, Transpose(Abar_Q), bbar, 1.0, 1.0) # Abar'*S⁺.Q*bbar
-
-	mul!(S.q, Transpose(Ku), r, -1.0, 1.0) # - Ku'*r
-	mul!(S.q, Transpose(Abar), S⁺.q, 1.0, 1.0) # Abar'*S⁺.q
-
-	S.Q .+= Q
-	S.q .+= q
-
-	# t1 = -2*lu'*r
-	# t1 = -2*dot(lu, r)
-
-	# t2 = 0.5*lu'*R*lu
-	# mul!(tmp1.r, R, lu) # R*lu
-	# t2 = 0.5*dot(lu, tmp1.r) # 0.5*lu'*R*lu
-    return  @SVector [t1, t2]
-end

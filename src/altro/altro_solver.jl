@@ -138,7 +138,7 @@ function solve!(solver::ALTROSolver)
     end
 
     terminate!(solver)
-    solver
+    return solver;
 end
 
 
