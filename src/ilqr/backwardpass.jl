@@ -28,7 +28,7 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m,p,nk,L1,D̄}) where
     ΔV = @SVector zeros(2)
 
 	# in the new derivation, these are used in mc model 
-    β::Float64 = 1e-6    
+    β::T = solver.opts.constraint_force_reg   
 	nx::Int = n̄   # notice the LQR is working with error state 
 	nu::Int = m
     ncxu::Int = 0
@@ -202,7 +202,7 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m,p,nk,L1,D̄}) where
             mul!(solver.tmp_nx[1], Transpose(solver.Abar), vx)
             S[k].q .+= solver.tmp_nx[1]                            # + Abar'*solver.vx_list[i+1]
             
-            ΔV += @SVector [t1, t2]
+            ΔV += @SVector [t1, 0.0]  # seems do no need t2 
 
 			#output to K and d
 			K[k] .= solver.Kx_list[k]

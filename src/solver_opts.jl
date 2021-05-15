@@ -83,6 +83,9 @@ end
     ρ_dual::T = 1.0e-8   # regularization for multiplier projection 
     r_threshold::T = 1.1
 
+    # mc version 
+    constraint_force_reg::T = 1e-6
+
     # General options
     projected_newton::Bool = true
     reuse_jacobians::Bool = false
