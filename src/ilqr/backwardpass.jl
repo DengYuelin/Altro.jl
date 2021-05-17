@@ -79,6 +79,15 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m,p,nk,L1,D̄}) where
             solver.M[idx2:idx3,idx4:idx5] .= solver.tmp_ncxuncxu[1]
             solver.M[idx4:idx5,idx2:idx3] .= Transpose(solver.tmp_ncxuncxu[1])
 
+			mul!(solver.tmp_ncxuncxu[3], Transpose(C), solver.tmp_nxncxu[1])   # C'Vxx*C
+            _,singular,_ = svd(solver.tmp_ncxuncxu[3])
+            min_sigular_value = minimum(singular)
+            if (min_sigular_value<=0)
+                β = -min_sigular_value + 1e-9
+            else
+                β = 0.0
+            end
+
             solver.tmp_ncxuncxu[1] .= 0
             for j=1:ncxu
                 solver.tmp_ncxuncxu[1][j,j] = 1.0

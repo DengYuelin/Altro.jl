@@ -142,7 +142,7 @@ function forwardpass!(solver::iLQRSolver, ΔV, J_prev)
             # Reduce step size if rollout returns non-finite values (NaN or Inf)
             # @logmsg InnerIters "Non-finite values in rollout"
             iter += 1
-            α /= 2.0
+            α /= solver.opts.line_search_coefficient
             continue
         end
 
@@ -159,7 +159,7 @@ function forwardpass!(solver::iLQRSolver, ΔV, J_prev)
         # println(z, " | expected:", expected, " | ΔV[1]:", ΔV[1], " | ΔV[2]: ", ΔV[2], " | α: ", α, " | iter: ", iter, " | J_prev - J: ", J_prev - J)
 
         iter += 1
-        α /= 2.0
+        α /= solver.opts.line_search_coefficient
     end
 
     if J > J_prev

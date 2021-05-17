@@ -85,6 +85,7 @@ end
 
     # mc version 
     constraint_force_reg::T = 1e-6
+    line_search_coefficient::T = 2.0
 
     # General options
     projected_newton::Bool = true
