@@ -85,7 +85,7 @@ function backwardpass!(solver::iLQRSolver{T,QUAD,L,O,n,n̄,m,p,nk,L1,D̄}) where
             if (min_sigular_value<=0)
                 β = -min_sigular_value + 1e-9
             else
-                β = 0.0
+                β = solver.opts.constraint_force_reg
             end
 
             solver.tmp_ncxuncxu[1] .= 0

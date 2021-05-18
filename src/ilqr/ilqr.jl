@@ -98,7 +98,7 @@ function iLQRSolver(
     # Init solver results
     n,m,N = size(prob)
     n̄ = RobotDynamics.state_diff_size(prob.model)
-    p = 0
+    p = 2 # for non-mc models, use a default magic number?
 
     x0 = prob.x0
     xf = prob.xf
@@ -118,7 +118,7 @@ function iLQRSolver(
 
     nx = n̄
     nu = m
-    ncxu = 2 # for non-mc models, use a default magic number?
+    ncxu = p 
     if is_MC_model(prob.model)
         ncxu = prob.model.p
     end

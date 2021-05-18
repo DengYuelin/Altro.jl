@@ -84,7 +84,7 @@ end
     r_threshold::T = 1.1
 
     # mc version 
-    constraint_force_reg::T = 1e-6
+    constraint_force_reg::T = 0.0
     line_search_coefficient::T = 2.0
 
     # General options
